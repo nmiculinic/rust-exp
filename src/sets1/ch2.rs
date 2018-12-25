@@ -3,11 +3,22 @@ extern crate base64;
 extern crate hex;
 
 #[allow(dead_code)]
-pub fn fixed_xor(a: &Vec<u8>, b: &Vec<u8>) -> Result<Vec<u8>, String> {
-    if a.len() != b.len() {
+pub fn repeating_xor(a: &Vec<u8>, key: &Vec<u8>) -> Result<Vec<u8>, String> {
+    if key.len() == 0 {
+        return Err(String::from("key len is zero"));
+    }
+    Ok(a.iter()
+        .zip(key.iter().cycle())
+        .map(|(x, y)| x ^ y)
+        .collect())
+}
+
+#[allow(dead_code)]
+pub fn fixed_xor(text: &Vec<u8>, key: &Vec<u8>) -> Result<Vec<u8>, String> {
+    if text.len() != key.len() {
         return Err(String::from("different length"));
     }
-    Ok(a.iter().zip(b.iter()).map(|(x, y)| x ^ y).collect())
+    repeating_xor(text, key)
 }
 
 #[cfg(test)]
