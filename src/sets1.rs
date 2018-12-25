@@ -1,12 +1,20 @@
 extern crate base64;
 extern crate hex;
+extern crate serde_cbor;
+
+use rv::dist::Categorical;
+use rv::traits::*;
 use std::collections::HashMap;
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::path::PathBuf;
 
 pub fn hex_to_base64(a: &str) -> String {
     base64::encode(&hex::decode(a).unwrap())
 }
 
-pub fn repeating_xor(a: &Vec<u8>, key: &Vec<u8>) -> Result<Vec<u8>, String> {
+pub fn repeating_xor(a: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     if key.len() == 0 {
         return Err(String::from("key len is zero"));
     }
@@ -16,7 +24,7 @@ pub fn repeating_xor(a: &Vec<u8>, key: &Vec<u8>) -> Result<Vec<u8>, String> {
         .collect())
 }
 
-pub fn fixed_xor(text: &Vec<u8>, key: &Vec<u8>) -> Result<Vec<u8>, String> {
+pub fn fixed_xor(text: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     if text.len() != key.len() {
         return Err(String::from("different length"));
     }
@@ -25,12 +33,12 @@ pub fn fixed_xor(text: &Vec<u8>, key: &Vec<u8>) -> Result<Vec<u8>, String> {
 
 pub const COMMON_LETTERS: &'static str = " eariotnEARIOTN";
 
-pub fn test_xor(a: &Vec<u8>, c: u8) -> Result<String, std::string::FromUtf8Error> {
-    String::from_utf8(a.iter().map(|x| x ^ c).collect())
+pub fn single_letter_xor(a: &[u8], key: u8) -> Result<String, std::string::FromUtf8Error> {
+    String::from_utf8(a.iter().map(|x| x ^ key).collect())
 }
 
 #[allow(dead_code)]
-pub fn freq_analysis(a: &Vec<u8>) -> HashMap<u8, u32> {
+pub fn freq_analysis(a: &[u8]) -> HashMap<u8, u32> {
     let mut freq: HashMap<u8, u32> = HashMap::new();
     for i in a {
         let c = freq.entry(*i).or_insert(0);
@@ -49,12 +57,56 @@ pub fn test_common_letters(a: &Vec<u8>, letters: &[u8]) -> Vec<String> {
 
     let mut all = Vec::new();
     for common in letters {
-        match test_xor(&a, common ^ top_freq.0) {
+        match single_letter_xor(&a, common ^ top_freq.0) {
             Ok(x) => all.push(x),
             _ => (),
         }
     }
     all
+}
+
+pub fn load_letter_frequency<P: AsRef<std::path::Path>>(
+    path: P,
+) -> Result<rv::dist::Categorical, Box<dyn Error>> {
+    let f = File::open(path)?;
+    let mut weights: [f64; 256] = [1e-3; 256];
+    let freq: HashMap<u8, u32> = serde_cbor::from_reader(f)?;
+    for (k, v) in freq {
+        weights[k as usize] = v as f64;
+    }
+    Ok(Categorical::new(&weights)?)
+}
+
+pub fn most_likely_xor(
+    freq: &HashMap<u8, u32>,
+    letter_distribution: &Categorical,
+) -> Result<(u8, f64), Box<dyn Error>> {
+    let mut best = (0, std::f64::INFINITY);
+    for candidate in 0..255 {
+        let mut values: [f64; 256] = [1e-3; 256];
+        for (k, v) in freq {
+            values[(k ^ candidate) as usize] = (*v) as f64;
+        }
+        match Categorical::new(&values) {
+            Ok(other) => {
+                let dist = letter_distribution.kl(&other);
+                println!("{}: Prob {}", candidate, dist);
+                if dist.is_finite() && dist < best.1 {
+                    best = (candidate, dist);
+                }
+            }
+            Err(_) => (),
+        }
+    }
+    Ok(best)
+}
+
+pub fn auto_single_byte_xor(
+    data: &[u8],
+    letter_distribution: &Categorical,
+) -> Result<(String, u8, f64), Box<dyn Error>> {
+    let (key, score) = most_likely_xor(&freq_analysis(data), letter_distribution)?;
+    Ok((single_letter_xor(data, key)?, key, score))
 }
 
 #[cfg(test)]
@@ -85,17 +137,20 @@ mod tests {
 
     // https://cryptopals.com/sets/1/challenges/3
     #[test]
-    fn test_ch3() {
+    fn test_ch3() -> Result<(), Box<dyn Error>> {
         let target =
             hex::decode("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
                 .unwrap();
-        // http://letterfrequency.org/
-        assert!(test_common_letters(&target, COMMON_LETTERS.as_bytes())
-            .contains(&String::from("Cooking MC\'s like a pound of bacon")));
+
+        let letter_distribution = load_default_letter_freq()?;
+        let (s, key, prob) = auto_single_byte_xor(&target, &letter_distribution)?;
+        println!("{}, {}: Prob: {}", key, s, prob);
         assert_eq!(
             String::from("Cooking MC\'s like a pound of bacon"),
-            test_xor(&target, 88).unwrap()
+            single_letter_xor(&target, 88).unwrap()
         );
+        assert_eq!(String::from("Cooking MC\'s like a pound of bacon"), s);
+        Ok(())
     }
 
     #[test]
@@ -450,75 +505,38 @@ I go crazy when I hear a cymbal";
         )
     }
 
-    #[test]
-    fn test_ch6() {
-        const DATA: &'static str = &"
-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
-";
-        assert!(DATA.len() > 0);
-        assert!(false); // not implemented
+    /*
+        #[test]
+        fn test_ch6() {
+            let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            d.push("data/sets1/ch6_file");
+            let mut f = File::open(d).unwrap();
+            let mut data = String::new();
+            f.read_to_string(&mut data).unwrap();
+            data = data.replace(" ", "").replace("\n", "");
+            let data = base64::decode(&data).unwrap();
+            assert!(false); // not implemented
+        }
+    */
+
+    fn load_default_letter_freq() -> Result<Categorical, Box<dyn Error>> {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("data/letter_freq");
+        let freq = load_letter_frequency(d)?;
+        let mut top: Vec<(String, f64)> = freq
+            .ln_weights
+            .iter()
+            .enumerate()
+            .map(|(k, v)| (String::from_utf8(vec![k as u8]), *v))
+            .filter(|(k, _)| k.is_ok())
+            .map(|(k, v)| (k.unwrap(), v))
+            .collect();
+
+        top.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        top.truncate(20);
+        for (k, v) in top {
+            println!("{}: {}", k, v);
+        }
+        Ok(freq)
     }
 }
