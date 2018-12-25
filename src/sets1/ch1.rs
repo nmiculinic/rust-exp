@@ -3,7 +3,7 @@ extern crate base64;
 extern crate hex;
 
 #[allow(dead_code)]
-fn hex_to_base64(a: &str) -> String {
+pub fn hex_to_base64(a: &str) -> String {
     base64::encode(&hex::decode(a).unwrap())
 }
 

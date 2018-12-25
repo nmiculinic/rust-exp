@@ -3,7 +3,7 @@ extern crate base64;
 extern crate hex;
 
 #[allow(dead_code)]
-fn fixed_xor(a: &Vec<u8>, b: &Vec<u8>) -> Result<Vec<u8>, String> {
+pub fn fixed_xor(a: &Vec<u8>, b: &Vec<u8>) -> Result<Vec<u8>, String> {
     if a.len() != b.len() {
         return Err(String::from("different length"));
     }
