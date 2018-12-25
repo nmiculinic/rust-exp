@@ -49,7 +49,7 @@ pub fn freq_analysis(a: &[u8]) -> HashMap<u8, u32> {
 }
 
 #[allow(dead_code)]
-pub fn test_common_letters(a: &Vec<u8>, letters: &[u8]) -> Vec<String> {
+pub fn test_common_letters(a: &[u8], letters: &[u8]) -> Vec<String> {
     let top_freq: (u8, u32) = freq_analysis(&a)
         .iter()
         .map(|(x, y)| (*x, *y))
