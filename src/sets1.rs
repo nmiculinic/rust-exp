@@ -1,4 +1,5 @@
 extern crate base64;
+extern crate hamming;
 extern crate hex;
 extern crate serde_cbor;
 
@@ -107,6 +108,36 @@ pub fn auto_single_byte_xor(
 ) -> Result<(String, u8, f64), Box<dyn Error>> {
     let (key, score) = most_likely_xor(&freq_analysis(data), letter_distribution)?;
     Ok((single_letter_xor(data, key)?, key, score))
+}
+
+pub fn edit_distance(a: &[u8], b: &[u8]) -> u32 {
+    let sz: usize = 1 + (a.len() + 1) * (b.len() + 1) as usize;
+    println!("sz {}", sz);
+    let mut dp: Vec<u32> = vec![std::u32::MAX; sz];
+    let idx = |x: usize, y: usize| x * b.len() + y;
+
+    for i in 0..a.len() {
+        dp[idx(i, 0)] = i as u32;
+    }
+    for i in 0..b.len() {
+        dp[idx(0, i)] = i as u32;
+    }
+    for i in 1..a.len() + 1 {
+        for j in 1..b.len() + 1 {
+            // match
+            if a[i - 1] == b[j - 1] {
+                dp[idx(i, j)] = dp[idx(i - 1, j - 1)];
+            }
+
+            // mismatch
+            dp[idx(i, j)] = std::cmp::min(dp[idx(i, j)], 1 + dp[idx(i - 1, j - 1)]);
+
+            // deletion|insertion depending how you look at it
+            dp[idx(i, j)] = std::cmp::min(dp[idx(i, j)], 1 + dp[idx(i, j - 1)]);
+            dp[idx(i, j)] = std::cmp::min(dp[idx(i, j)], 1 + dp[idx(i - 1, j)]);
+        }
+    }
+    dp[idx(a.len(), b.len())]
 }
 
 #[cfg(test)]
@@ -538,5 +569,27 @@ I go crazy when I hear a cymbal";
             println!("{}: {}", k, v);
         }
         Ok(freq)
+    }
+
+    #[test]
+    fn test_edit_distance() {
+        assert_eq!(
+            edit_distance(
+                String::from("this is a test").as_bytes(),
+                String::from("wokka wokka!!!").as_bytes(),
+            ),
+            14
+        )
+    }
+
+    #[test]
+    fn test_hamming_distance() {
+        assert_eq!(
+            hamming::distance(
+                String::from("this is a test").as_bytes(),
+                String::from("wokka wokka!!!").as_bytes(),
+            ),
+            37
+        )
     }
 }
