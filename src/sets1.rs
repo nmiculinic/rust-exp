@@ -140,6 +140,25 @@ pub fn edit_distance(a: &[u8], b: &[u8]) -> u32 {
     dp[idx(a.len(), b.len())]
 }
 
+pub fn normalized_keysize_score(data: &[u8], size: usize) -> f64 {
+    let num_blocks = data.len() / size;
+    if num_blocks < 2 {
+        return std::f64::INFINITY;
+    }
+    let mut total = 0;
+    let mut total_op = 0; // I'm lazy
+    for i in 0..num_blocks - 1 {
+        for j in i + 1..num_blocks {
+            total += hamming::distance(
+                &data[i * size..(i + 1) * size],
+                &data[j * size..(j + 1) * size],
+            );
+            total_op += 1;
+        }
+    }
+    total as f64 / (size * total_op) as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
