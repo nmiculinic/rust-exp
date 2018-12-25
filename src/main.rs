@@ -1,31 +1,23 @@
-use rand::Rng;
-use std::cmp::Ordering;
-use std::io;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 
 fn main() {
-    println!("Guess the number!");
-    println!("Please input your guess.");
+    let mut file = File::open("README.md").unwrap();
+    let mut buff: [u8; 1024] = [0; 1024];
+    let mut total = HashMap::new();
 
-    let tup = (500, 6.4, 1);
-    match tup {
-        (x, _, _) => println!("first value is {}", x),
-    }
-
-    let secret_number = rand::thread_rng().gen_range(1, 101);
     loop {
-        let mut guess = String::new();
-        io::stdin()
-            .read_line(&mut guess)
-            .expect("Failed to read line");
-
-        let guess: u32 = guess.trim().parse().expect("Please type a number!");
-        match guess.cmp(&secret_number) {
-            Ordering::Less => println!("Too small! {}", secret_number),
-            Ordering::Greater => println!("Too big! {}", secret_number),
-            Ordering::Equal => {
-                println!("You win!");
-                break;
+        match file.read(&mut buff) {
+            Ok(0) => break,
+            Ok(n) => {
+                for i in 0..n {
+                    let c = total.entry(buff[i]).or_insert(0);
+                    *c += 1;
+                }
             }
+            Err(x) => panic!(x),
         }
     }
+    println!("{:?}", total)
 }
