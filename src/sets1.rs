@@ -17,6 +17,20 @@ pub fn hex_to_base64(a: &str) -> String {
     base64::encode(&hex::decode(a).unwrap())
 }
 
+pub fn read_hex_strings<P: AsRef<std::path::Path>>(
+    path: P,
+) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
+    let mut f = File::open(path)?;
+    let mut data = String::new();
+    f.read_to_string(&mut data).unwrap();
+    let mut all: Vec<Vec<u8>> = Vec::new();
+    data.split_whitespace()
+        .filter(|x| x.len() > 0)
+        .map(|x| hex::decode(x).unwrap())
+        .for_each(|x| all.push(x));
+    Ok(all)
+}
+
 pub fn repeating_xor(a: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     if key.len() == 0 {
         return Err(String::from("key len is zero"));
@@ -253,16 +267,10 @@ mod tests {
     fn test_ch4() {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("data/sets1/4.txt");
-        let mut f = File::open(d).unwrap();
-        let mut data = String::new();
-        f.read_to_string(&mut data).unwrap();
+        let data = read_hex_strings(d).unwrap();
         let letter_distribution = load_default_letter_freq().unwrap();
         let mut all = Vec::new();
-        for it in data
-            .split_whitespace()
-            .filter(|x| x.len() > 0)
-            .map(|x| hex::decode(x).unwrap())
-        {
+        for it in data {
             match auto_single_byte_xor(&it, &letter_distribution) {
                 Ok((s, _, score)) => {
                     println!("{} :{}", score, s);
