@@ -56,6 +56,13 @@ where
     }
 }
 
+pub fn byte_at_time_ecb_simple<F>(oracle: F) -> Vec<u8>
+where
+    F: Fn(&[u8]) -> Vec<u8>,
+{
+    Vec::new()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -90,6 +97,26 @@ mod test {
         for _ in 0..10 {
             assert_eq!(Mode::ECB, detect_mode(|x| encryption_oracle(x, Mode::ECB)),)
         }
+    }
+
+    #[test]
+    fn test_ch12() {
+        let data = load_base64_file(PathBuf::from(
+            env!("CARGO_MANIFEST_DIR").to_owned() + "/data/12.in",
+        ))
+        .unwrap();
+
+        let mut rng = rand::thread_rng();
+        let mut key: [u8; 16] = [0; 16];
+        rng.fill_bytes(&mut key);
+        let cipher = Cipher::aes_128_ecb();
+
+        let oracle = |x: &[u8]| {
+            let mut v = data.clone();
+            v.append(&mut Vec::from(x));
+            encrypt(cipher, &key, None, &v).unwrap()
+        };
+        assert_eq!(data, byte_at_time_ecb_simple(oracle))
     }
 
 }
