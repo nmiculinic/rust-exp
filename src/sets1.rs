@@ -8,7 +8,9 @@ use rv::traits::*;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
+
 use std::io::Read;
+use std::io::Write;
 use std::path::PathBuf;
 
 pub fn hex_to_base64(a: &str) -> String {
@@ -31,8 +33,6 @@ pub fn fixed_xor(text: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     }
     repeating_xor(text, key)
 }
-
-pub const COMMON_LETTERS: &'static str = " eariotnEARIOTN";
 
 pub fn single_letter_xor(a: &[u8], key: u8) -> Result<String, std::string::FromUtf8Error> {
     String::from_utf8(a.iter().map(|x| x ^ key).collect())
@@ -179,7 +179,8 @@ pub fn auto_known_multi_byte_xor(
     let key = key; // make immutable
 
     let s = String::from_utf8(repeating_xor(&data, &key)?)?;
-    Ok((s, key, 0.0))
+    let current_dist = freq_to_dist(&freq_analysis(s.as_bytes()), 0)?;
+    Ok((s, key, letter_distribution.kl(&current_dist)))
 }
 
 pub fn auto_multi_byte_xor<T>(
@@ -194,12 +195,14 @@ where
         .into_iter()
         .map(|x| (x, normalized_keysize_score(&data, x)))
         .collect();
-    candidate_sizes.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
-    for (x, prob) in candidate_sizes.iter().take(5) {
-        println!("{}: {}", x, prob);
+    candidate_sizes.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+
+    let mut candidates: Vec<(String, Vec<u8>, f64)> = Vec::new();
+    for (x, _) in candidate_sizes.iter().take(5) {
+        candidates.push(auto_known_multi_byte_xor(&data, &letter_distribution, *x)?);
     }
-    let (key, score) = most_likely_xor(&freq_analysis(data), letter_distribution)?;
-    Ok((single_letter_xor(data, key)?, vec![key], score))
+    candidates.sort_by(|(_, _, a), (_, _, b)| a.partial_cmp(b).unwrap());
+    Ok(candidates[0].clone())
 }
 
 #[cfg(test)]
@@ -261,7 +264,7 @@ mod tests {
             .map(|x| hex::decode(x).unwrap())
         {
             match auto_single_byte_xor(&it, &letter_distribution) {
-                Ok((s, key, score)) => {
+                Ok((s, _, score)) => {
                     println!("{} :{}", score, s);
                     all.push(s);
                 }
@@ -285,19 +288,27 @@ I go crazy when I hear a cymbal";
         )
     }
 
-    /*
-        #[test]
-        fn test_ch6() {
-            let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            d.push("data/sets1/ch6_file");
-            let mut f = File::open(d).unwrap();
-            let mut data = String::new();
-            f.read_to_string(&mut data).unwrap();
-            data = data.replace(" ", "").replace("\n", "");
-            let data = base64::decode(&data).unwrap();
-            assert!(false); // not implemented
-        }
-    */
+    #[test]
+    fn test_ch6() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("data/sets1/6.in");
+        let mut f = File::open(d).unwrap();
+        let mut data = String::new();
+        f.read_to_string(&mut data).unwrap();
+        data = data.replace(" ", "").replace("\n", "");
+        let data = base64::decode(&data).unwrap();
+        let (s, key, score) =
+            auto_multi_byte_xor(&data, &load_default_letter_freq().unwrap(), 2..40).unwrap();
+        println!("{} {:?}:\n{}", score, key, s);
+
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("data/sets1/6.out");
+        let mut f = File::open(d).unwrap();
+        let mut result = String::new();
+        f.read_to_string(&mut result).unwrap();
+
+        assert_eq!(s, result);
+    }
 
     fn load_default_letter_freq() -> Result<Categorical, Box<dyn Error>> {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
