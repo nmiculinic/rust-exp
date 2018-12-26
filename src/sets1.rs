@@ -70,8 +70,9 @@ pub fn load_letter_frequency<P: AsRef<std::path::Path>>(
     path: P,
 ) -> Result<rv::dist::Categorical, Box<dyn Error>> {
     let f = File::open(path)?;
-    let mut weights: [f64; 256] = [1e-3; 256];
     let freq: HashMap<u8, u32> = serde_cbor::from_reader(f)?;
+    let total_cnt: u32 = freq.iter().map(|(_, x)| x).sum();
+    let mut weights: [f64; 256] = [1.0 / total_cnt as f64; 256];
     for (k, v) in freq {
         weights[k as usize] = v as f64;
     }
@@ -82,9 +83,10 @@ pub fn most_likely_xor(
     freq: &HashMap<u8, u32>,
     letter_distribution: &Categorical,
 ) -> Result<(u8, f64), Box<dyn Error>> {
+    let total_cnt: u32 = freq.iter().map(|(_, x)| x).sum();
     let mut best = (0, std::f64::INFINITY);
     for candidate in 0..255 {
-        let mut values: [f64; 256] = [1e-3; 256];
+        let mut values: [f64; 256] = [1.0 / total_cnt as f64; 256];
         for (k, v) in freq {
             values[(k ^ candidate) as usize] = (*v) as f64;
         }
