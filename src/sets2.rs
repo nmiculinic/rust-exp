@@ -137,8 +137,8 @@ mod test {
         let cipher = Cipher::aes_128_ecb();
 
         let oracle = |x: &[u8]| {
-            let mut v = data.clone();
-            v.append(&mut Vec::from(x));
+            let mut v = Vec::from(x);
+            v.append(&mut data.clone());
             encrypt(cipher, &key, None, &v).unwrap()
         };
         assert_eq!(data, byte_at_time_ecb_simple(&oracle))
