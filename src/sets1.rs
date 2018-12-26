@@ -39,8 +39,8 @@ pub fn single_letter_xor(a: &[u8], key: u8) -> Result<String, std::string::FromU
 }
 
 #[allow(dead_code)]
-pub fn freq_analysis(a: &[u8]) -> HashMap<u8, u32> {
-    let mut freq: HashMap<u8, u32> = HashMap::new();
+pub fn freq_analysis(a: &[u8]) -> HashMap<u8, usize> {
+    let mut freq: HashMap<u8, usize> = HashMap::new();
     for i in a {
         let c = freq.entry(*i).or_insert(0);
         *c += 1;
@@ -48,22 +48,13 @@ pub fn freq_analysis(a: &[u8]) -> HashMap<u8, u32> {
     freq
 }
 
-#[allow(dead_code)]
-pub fn test_common_letters(a: &[u8], letters: &[u8]) -> Vec<String> {
-    let top_freq: (u8, u32) = freq_analysis(&a)
-        .iter()
-        .map(|(x, y)| (*x, *y))
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .unwrap();
-
-    let mut all = Vec::new();
-    for common in letters {
-        match single_letter_xor(&a, common ^ top_freq.0) {
-            Ok(x) => all.push(x),
-            _ => (),
-        }
+pub fn freq_to_dist(freq: &HashMap<u8, usize>, xor: u8) -> std::io::Result<Categorical> {
+    let total_cnt: usize = freq.iter().map(|(_, x)| x).sum();
+    let mut values: [f64; 256] = [1.0 / total_cnt as f64; 256];
+    for (k, v) in freq {
+        values[(k ^ xor) as usize] = (*v) as f64;
     }
-    all
+    Categorical::new(&values)
 }
 
 pub fn load_letter_frequency<P: AsRef<std::path::Path>>(
@@ -80,10 +71,9 @@ pub fn load_letter_frequency<P: AsRef<std::path::Path>>(
 }
 
 pub fn most_likely_xor(
-    freq: &HashMap<u8, u32>,
+    freq: &HashMap<u8, usize>,
     letter_distribution: &Categorical,
 ) -> Result<(u8, f64), Box<dyn Error>> {
-    let total_cnt: u32 = freq.iter().map(|(_, x)| x).sum();
     let mut best = (0, std::f64::INFINITY);
     let (target_letter, _) = letter_distribution
         .ln_weights
@@ -94,15 +84,11 @@ pub fn most_likely_xor(
     let mut freqvec = freq
         .iter()
         .map(|(a, b)| (*a, *b))
-        .collect::<Vec<(u8, u32)>>();
+        .collect::<Vec<(u8, usize)>>();
     freqvec.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
     for (t, _) in freqvec.iter().take(10) {
         let candidate = t ^ target_letter as u8;
-        let mut values: [f64; 256] = [1.0 / total_cnt as f64; 256];
-        for (k, v) in freq {
-            values[(k ^ candidate) as usize] = (*v) as f64;
-        }
-        match Categorical::new(&values) {
+        match freq_to_dist(&freq, candidate) {
             Ok(other) => {
                 let dist = letter_distribution.kl(&other);
                 if dist.is_finite() && dist < best.1 {
@@ -169,6 +155,51 @@ pub fn normalized_keysize_score(data: &[u8], size: usize) -> f64 {
         }
     }
     total as f64 / (size * total_op) as f64
+}
+
+pub fn auto_known_multi_byte_xor(
+    data: &[u8],
+    letter_distribution: &Categorical,
+    key_len: usize,
+) -> Result<(String, Vec<u8>, f64), Box<dyn Error>> {
+    let mut v: Vec<Vec<u8>> = Vec::new();
+    for _ in 0..key_len {
+        v.push(Vec::new())
+    }
+    for (i, elem) in data.iter().enumerate() {
+        v[i % key_len].push(*elem);
+    }
+    let v = v; // make immutable
+
+    let mut key: Vec<u8> = Vec::new();
+    for i in 0..key_len {
+        let (_, key_elem, _) = auto_single_byte_xor(&v[i], &letter_distribution)?;
+        key.push(key_elem);
+    }
+    let key = key; // make immutable
+
+    let s = String::from_utf8(repeating_xor(&data, &key)?)?;
+    Ok((s, key, 0.0))
+}
+
+pub fn auto_multi_byte_xor<T>(
+    data: &[u8],
+    letter_distribution: &Categorical,
+    key_len_range: T,
+) -> Result<(String, Vec<u8>, f64), Box<dyn Error>>
+where
+    T: IntoIterator<Item = usize>,
+{
+    let mut candidate_sizes: Vec<(usize, f64)> = key_len_range
+        .into_iter()
+        .map(|x| (x, normalized_keysize_score(&data, x)))
+        .collect();
+    candidate_sizes.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+    for (x, prob) in candidate_sizes.iter().take(5) {
+        println!("{}: {}", x, prob);
+    }
+    let (key, score) = most_likely_xor(&freq_analysis(data), letter_distribution)?;
+    Ok((single_letter_xor(data, key)?, vec![key], score))
 }
 
 #[cfg(test)]
