@@ -38,8 +38,11 @@ pub fn single_letter_xor(a: &[u8], key: u8) -> Result<String, std::string::FromU
 }
 
 #[allow(dead_code)]
-pub fn freq_analysis(a: &[u8]) -> HashMap<u8, usize> {
-    let mut freq: HashMap<u8, usize> = HashMap::new();
+pub fn freq_analysis<T>(a: &[T]) -> HashMap<T, usize>
+where
+    T: Eq + std::hash::Hash + Copy,
+{
+    let mut freq: HashMap<T, usize> = HashMap::new();
     for i in a {
         let c = freq.entry(*i).or_insert(0);
         *c += 1;
@@ -191,6 +194,29 @@ where
     Ok(candidates[0].clone())
 }
 
+pub fn repetition_entropy_16(data: &[u8]) -> f64 {
+    const BLOCK_SIZE: usize = 16;
+    if data.len() % BLOCK_SIZE != 0 {
+        return std::f64::INFINITY;
+    }
+    let blocks = data.len() / BLOCK_SIZE;
+    let mut freq: HashMap<&[u8], usize> = HashMap::new();
+    for i in 0..blocks {
+        let c = freq
+            .entry(&data[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE])
+            .or_insert(0);
+        *c += 1;
+    }
+    Categorical::new(
+        &freq
+            .iter()
+            .map(|(_, cnt)| *cnt as f64)
+            .collect::<Vec<f64>>(),
+    )
+    .unwrap()
+    .entropy()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,7 +312,6 @@ I go crazy when I hear a cymbal";
         assert_eq!(s, result);
     }
 
-
     #[test]
     fn test_edit_distance() {
         assert_eq!(
@@ -311,6 +336,27 @@ I go crazy when I hear a cymbal";
 
     #[test]
     fn test_ch7() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("data/sets1/7.in");
+        let data = load_base64_file(d).unwrap();
+        assert!(false);
+    }
 
+    #[test]
+    fn test_ch8() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("data/sets1/8.txt");
+        let data = load_hex_strings(d).unwrap();
+        data.iter()
+            .enumerate()
+            .for_each(|(i, x)| println!("{}: {}", i, repetition_entropy_16(x)));
+
+        let (sol, _) = data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| (i, repetition_entropy_16(x)))
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap();
+        assert_eq!(sol, 132);
     }
 }
