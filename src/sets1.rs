@@ -4,6 +4,7 @@ extern crate hex;
 extern crate serde_cbor;
 
 use super::io::*;
+use openssl::symm::{decrypt, Cipher};
 use rv::dist::Categorical;
 use rv::traits::*;
 use std::collections::HashMap;
@@ -339,7 +340,17 @@ I go crazy when I hear a cymbal";
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("data/sets1/7.in");
         let data = load_base64_file(d).unwrap();
-        assert!(false);
+        let cipher = Cipher::aes_128_ecb();
+        let key = b"YELLOW SUBMARINE";
+        let pt = String::from_utf8(decrypt(cipher, key, None, &data).unwrap()).unwrap();
+        println!("{}", pt);
+
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("data/sets1/7.out");
+        let mut f = File::open(d).unwrap();
+        let mut result = String::new();
+        f.read_to_string(&mut result).unwrap();
+        assert_eq!(result, pt);
     }
 
     #[test]
