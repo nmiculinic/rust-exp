@@ -43,23 +43,47 @@ pub fn encryption_oracle(data: &[u8], mode: Mode) -> Vec<u8> {
     encrypt(cipher, &key, Some(&iv), &d).unwrap()
 }
 
-pub fn detect_mode<F>(oracle: F) -> Mode
+pub fn detect_mode<F>(oracle: &F) -> Mode
 where
     F: Fn(&[u8]) -> Vec<u8>,
 {
     let plaintext: [u8; 1024] = [0; 1024];
     let cyphertext = oracle(&plaintext);
-    if cyphertext[128..128 + 8] == cyphertext[128 + 16..128 + 16 + 8] {
+    const offset: usize = 512;
+    if cyphertext[offset..offset + 8] == cyphertext[offset + 16..offset + 16 + 8] {
         Mode::ECB
     } else {
         Mode::CBC
     }
 }
 
-pub fn byte_at_time_ecb_simple<F>(oracle: F) -> Vec<u8>
+pub fn find_block_size<F>(oracle: F) -> (usize, usize)
 where
     F: Fn(&[u8]) -> Vec<u8>,
 {
+    let mut v: Vec<u8> = Vec::new();
+    let sz = oracle(&v).len();
+    let mut padding_sz = 0;
+    while oracle(&v).len() == sz {
+        padding_sz += 1;
+        v.push(0);
+    }
+    let sz = oracle(&v).len();
+    let mut block_size = 0;
+    while oracle(&v).len() == sz {
+        block_size += 1;
+        v.push(0);
+    }
+    let target_size = sz - padding_sz - block_size;
+    (block_size, target_size)
+}
+pub fn byte_at_time_ecb_simple<F>(oracle: &F) -> Vec<u8>
+where
+    F: Fn(&[u8]) -> Vec<u8>,
+{
+    let (block_size, plaintext_size) = find_block_size(oracle);
+    println!("block size: {}, {}", block_size, plaintext_size);
+    assert_eq!(detect_mode(&oracle), Mode::ECB);
     Vec::new()
 }
 
@@ -92,10 +116,10 @@ mod test {
     #[test]
     fn test_ch11() {
         for _ in 0..10 {
-            assert_eq!(Mode::CBC, detect_mode(|x| encryption_oracle(x, Mode::CBC)),)
+            assert_eq!(Mode::CBC, detect_mode(&|x| encryption_oracle(x, Mode::CBC)),)
         }
         for _ in 0..10 {
-            assert_eq!(Mode::ECB, detect_mode(|x| encryption_oracle(x, Mode::ECB)),)
+            assert_eq!(Mode::ECB, detect_mode(&|x| encryption_oracle(x, Mode::ECB)),)
         }
     }
 
@@ -106,6 +130,7 @@ mod test {
         ))
         .unwrap();
 
+        println!("plaintext size: {}", data.len());
         let mut rng = rand::thread_rng();
         let mut key: [u8; 16] = [0; 16];
         rng.fill_bytes(&mut key);
@@ -116,7 +141,7 @@ mod test {
             v.append(&mut Vec::from(x));
             encrypt(cipher, &key, None, &v).unwrap()
         };
-        assert_eq!(data, byte_at_time_ecb_simple(oracle))
+        assert_eq!(data, byte_at_time_ecb_simple(&oracle))
     }
 
 }
