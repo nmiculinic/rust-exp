@@ -3,32 +3,17 @@ extern crate hamming;
 extern crate hex;
 extern crate serde_cbor;
 
+use super::io::*;
 use rv::dist::Categorical;
 use rv::traits::*;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
-
 use std::io::Read;
-use std::io::Write;
 use std::path::PathBuf;
 
 pub fn hex_to_base64(a: &str) -> String {
     base64::encode(&hex::decode(a).unwrap())
-}
-
-pub fn read_hex_strings<P: AsRef<std::path::Path>>(
-    path: P,
-) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
-    let mut f = File::open(path)?;
-    let mut data = String::new();
-    f.read_to_string(&mut data).unwrap();
-    let mut all: Vec<Vec<u8>> = Vec::new();
-    data.split_whitespace()
-        .filter(|x| x.len() > 0)
-        .map(|x| hex::decode(x).unwrap())
-        .for_each(|x| all.push(x));
-    Ok(all)
 }
 
 pub fn repeating_xor(a: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
@@ -69,19 +54,6 @@ pub fn freq_to_dist(freq: &HashMap<u8, usize>, xor: u8) -> std::io::Result<Categ
         values[(k ^ xor) as usize] = (*v) as f64;
     }
     Categorical::new(&values)
-}
-
-pub fn load_letter_frequency<P: AsRef<std::path::Path>>(
-    path: P,
-) -> Result<rv::dist::Categorical, Box<dyn Error>> {
-    let f = File::open(path)?;
-    let freq: HashMap<u8, u32> = serde_cbor::from_reader(f)?;
-    let total_cnt: u32 = freq.iter().map(|(_, x)| x).sum();
-    let mut weights: [f64; 256] = [1.0 / total_cnt as f64; 256];
-    for (k, v) in freq {
-        weights[k as usize] = v as f64;
-    }
-    Ok(Categorical::new(&weights)?)
 }
 
 pub fn most_likely_xor(
@@ -267,7 +239,7 @@ mod tests {
     fn test_ch4() {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("data/sets1/4.txt");
-        let data = read_hex_strings(d).unwrap();
+        let data = load_hex_strings(d).unwrap();
         let letter_distribution = load_default_letter_freq().unwrap();
         let mut all = Vec::new();
         for it in data {
@@ -300,11 +272,7 @@ I go crazy when I hear a cymbal";
     fn test_ch6() {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("data/sets1/6.in");
-        let mut f = File::open(d).unwrap();
-        let mut data = String::new();
-        f.read_to_string(&mut data).unwrap();
-        data = data.replace(" ", "").replace("\n", "");
-        let data = base64::decode(&data).unwrap();
+        let data = load_base64_file(d).unwrap();
         let (s, key, score) =
             auto_multi_byte_xor(&data, &load_default_letter_freq().unwrap(), 2..40).unwrap();
         println!("{} {:?}:\n{}", score, key, s);
