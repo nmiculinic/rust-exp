@@ -13,3 +13,4 @@ serde_cbor = "0.9.0"
 rv='0.4.1'
 hamming = "0.1"
 openssl="0.10.16"
+pretty-hex="0.1.0"

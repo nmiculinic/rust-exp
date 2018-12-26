@@ -1,5 +1,7 @@
 extern crate base64;
 extern crate hex;
+extern crate pretty_hex;
+use pretty_hex::*;
 
 use super::io::*;
 use openssl::symm::{decrypt, encrypt, Cipher};
@@ -84,7 +86,47 @@ where
     let (block_size, plaintext_size) = find_block_size(oracle);
     println!("block size: {}, {}", block_size, plaintext_size);
     assert_eq!(detect_mode(&oracle), Mode::ECB);
-    Vec::new()
+
+    let mut sol = Vec::new();
+    let mut padding: Vec<u8> = Vec::with_capacity(block_size * 256 + 2 * block_size);
+    for i in 0..plaintext_size {
+        padding.clear();
+        {
+            let pad = |cnt: usize, arr: &mut Vec<u8>| {
+                if cnt > sol.len() {
+                    for _ in 0..cnt - sol.len() {
+                        arr.push(0);
+                    }
+                    arr.append(&mut sol.clone());
+                } else {
+                    arr.append(&mut Vec::from(&sol[sol.len() - cnt..]));
+                }
+            };
+            for blk_id in 0..256 {
+                pad(block_size - 1, &mut padding);
+                padding.push(blk_id as u8);
+            }
+
+            for _ in 0..(2 * block_size - 1 - (i % block_size)) % block_size {
+                padding.push(0);
+            }
+        }
+        let cyphertext = oracle(&padding);
+        let mut target: Option<u8> = None;
+        let target_block = 256 + (sol.len() / block_size);
+        for blk_id in 0..256 {
+            if &cyphertext[blk_id * block_size..(blk_id + 1) * block_size]
+                == &cyphertext[target_block * block_size..(target_block + 1) * block_size]
+            {
+                match target {
+                    Some(x) => panic!("Collision between {} and {}", x, blk_id),
+                    None => target = Some(blk_id as u8),
+                };
+            }
+        }
+        sol.push(target.unwrap());
+    }
+    sol
 }
 
 #[cfg(test)]
@@ -134,11 +176,13 @@ mod test {
         let mut rng = rand::thread_rng();
         let mut key: [u8; 16] = [0; 16];
         rng.fill_bytes(&mut key);
+        let key = key; // make key immutable
         let cipher = Cipher::aes_128_ecb();
 
         let oracle = |x: &[u8]| {
             let mut v = Vec::from(x);
             v.append(&mut data.clone());
+            // println!("data:\n{:?}", v.hex_dump());
             encrypt(cipher, &key, None, &v).unwrap()
         };
         assert_eq!(data, byte_at_time_ecb_simple(&oracle))
